@@ -12,6 +12,7 @@ import qualified Data.Set as S
 
     Tipul unei nod utilizat în procesul de căutare. Recomandăm reținerea unor
     informații legate de:
+    
 
     * stare;
     * acțiunea care a condus la această stare;
@@ -20,7 +21,7 @@ import qualified Data.Set as S
     * copiii, ce vor desemna stările învecinate
 -}
 
-data Node s a = UndefinedNode
+data Node s a = EmptyNode {depth :: Int} | Node {stare :: s, actiune :: a, parent :: (Node s a), depth :: Int, copii :: [(a, s)]}
 
 {-
     *** TODO ***
@@ -29,7 +30,7 @@ data Node s a = UndefinedNode
 -}
 
 nodeState :: Node s a -> s
-nodeState = undefined
+nodeState node = stare node 
 
 {-
     *** TODO ***
@@ -38,9 +39,12 @@ nodeState = undefined
     Primește starea inițială și creează nodul corespunzător acestei stări, 
     având drept copii nodurile succesorilor stării curente.
 -}
-
 createStateSpace :: (ProblemState s a) => s -> Node s a
-createStateSpace = undefined
+createStateSpace initState = Node {stare = initState,
+                                   actiune = fst (head (successors initState)),
+                                   parent = EmptyNode {depth = -1},
+                                   depth = 0,
+                                   copii = successors initState} 
 
 {-
     *** TODO PENTRU BONUS ***
@@ -61,14 +65,37 @@ orderStateSpace = undefined
 
     Pentru reținerea stărilor vizitate, recomandăm Data.Set. Constrângerea
     `Ord s` permite utilizarea tipului `Set`.
+-}  
+{- 
+  --> helper - va primi ca argumente maxDepth, o pereche cu un set in care am pus nodurile
+  deja vizitate si o lista cu acele noduri (could not deduce Ord(Node s a)) => folosesc foldl pt lista)
+  si un nod nu care trebuie inserat si va returna setul care contine nodurile vizitate
+  --> garzi:
+  daca s-a atins adancimea maxima => set
+  daca starea nodului se afla in set(deci e deja vizitat) => set
+  altfel apelez recursiv helper pentru fiecare copil al unui nod pentru a construi setul final
+  
 -}
 
+helper :: (ProblemState s a, Ord s) => Int -> (S.Set s, [Node s a]) -> Node s a -> (S.Set s, [Node s a])
+helper maxDepth (set, noduriVizitate) node 
+    --doar pentru a evita infinite loop
+    | maxDepth > 50 = undefined
+    | ((depth node) > maxDepth) == True = (set, noduriVizitate)
+    | (S.member (nodeState node) set) = (set, noduriVizitate)
+    | otherwise = foldl (helper maxDepth) (S.insert (nodeState node) set, node : noduriVizitate) (succesori node)
+    where succesori n = [Node {stare = snd x,
+                                  actiune = fst x,
+                                  parent = n,
+                                  depth = (depth n) + 1,
+                                  copii = successors (snd x)}
+                            | x <- (copii n)]
+                            
 limitedDfs :: (ProblemState s a, Ord s)
            => Node s a    -- Nodul stării inițiale
            -> Int         -- Adâncimea maximă de explorare
            -> [Node s a]  -- Lista de noduri
-limitedDfs = undefined
-
+limitedDfs initialNode maxDepth = reverse $ snd (helper maxDepth (S.empty, []) initialNode)
 {-
     *** TODO ***
 
@@ -79,11 +106,25 @@ limitedDfs = undefined
     de stări nefinale vizitate până în acel moment.
 -}
 
+helper1 :: (ProblemState s a, Ord s) => Node s a -> Int -> Int -> (Node s a, Int) 
+helper1 node currentDepth nr 
+    | (depth n) >= 0 = (n, index + nr)
+    | otherwise = helper1 node (currentDepth + 1) (nr + (length noduriStari))
+    where noduriStari = limitedDfs node currentDepth
+          (n, index) = myFilter (\x -> isGoal(nodeState x)) noduriStari 0
+
+--returneaza starea corespunzatoare gasita si ii asociaza un index           
+myFilter ::(ProblemState s a, Ord s) => (Node s a -> Bool) -> [Node s a] -> Int -> (Node s a, Int)
+myFilter fct noduriStari startIndex 
+    | fct (head noduriStari) = (head noduriStari, startIndex)
+    | null (tail noduriStari) = (EmptyNode{depth = -1}, 0)
+    | otherwise = myFilter fct (tail noduriStari) (startIndex + 1)
+    
 iterativeDeepening :: (ProblemState s a, Ord s)
-    => Node s a         -- Nodul stării inițiale
-    -> (Node s a, Int)  -- (Nod cu prima stare finală,
+           => Node s a         -- Nodul stării inițiale
+           -> (Node s a, Int)  -- (Nod cu prima stare finală,
                         --  număr de stări nefinale vizitate)
-iterativeDeepening = undefined
+iterativeDeepening initialNode = helper1 initialNode 0 0
 
 {-
     *** TODO ***
@@ -94,10 +135,15 @@ iterativeDeepening = undefined
     Întoarce o listă de perechi (acțiune, stare), care se încheie în starea
     finală, dar care EXCLUDE starea inițială.
 -}
-
+getPath :: Node s a -> [(a, s)]
+getPath initialNode 
+    | (depth initialNode == 0) = []
+    | otherwise = (actiune initialNode, stare initialNode) : (getPath (parent initialNode))
+    
+    
 extractPath :: Node s a -> [(a, s)]
-extractPath = undefined
-
+extractPath initialNode = reverse (getPath initialNode)  
+     
 {-
     *** TODO ***
 
@@ -113,7 +159,7 @@ solve :: (ProblemState s a, Ord s)
       => s          -- Starea inițială de la care se pornește 
       -> Bool       -- Dacă să folosească sau nu euristica dată 
       -> [(a, s)]   -- Lista perechilor
-solve = undefined
+solve initState False = extractPath (fst (iterativeDeepening (createStateSpace initState)))
 
 {-
     Poate fi utilizată pentru afișarea fiecărui element al unei liste
